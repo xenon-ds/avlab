@@ -41,3 +41,17 @@ text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],labels=pow
 abline(h=0.90,col="red")
 plot(sft$fitIndices[,1], sft$fitIndices[,5],xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",main = paste("Mean connectivity"))
 text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+
+softPower = 20
+adjacency_matrix = adjacency(transposed_counts_df, power = softPower)
+
+TOM = TOMsimilarity(adjacency_matrix)
+dissTOM = 1-TOM
+
+geneTree = hclust(as.dist(dissTOM),method = "average")
+sizeGrWindow(12,9)
+plot(geneTree, xlab="", sub="", main = "Gene clustering on TOM-based dissimilarity",labels = FALSE, hang = 0.04)
+
+minimum_module_size = 30 
+dynamicMods = cutreeDynamic(dendro = geneTree, distM = dissTOM, deepSplit = 2, pamRespectsDendro = FALSE, minClusterSize = minimum_module_size)
+table(dynamicMods)
