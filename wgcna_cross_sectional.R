@@ -1,4 +1,5 @@
 #scr 0 vs 2
+source("./myUtils.R")
 library(stringr)
 counts_df=read.csv(file="./counts_igra_negative_scr_0hr_vs_igra_negative_b3_0hr.csv",header = TRUE,stringsAsFactors = FALSE)
 
