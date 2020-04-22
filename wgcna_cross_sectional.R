@@ -2,7 +2,7 @@
 library(stringr)
 counts_df=read.csv(file="./counts_igra_negative_scr_0hr_vs_igra_negative_b3_0hr.csv",header = TRUE,stringsAsFactors = FALSE)
 
-
+seed(1234)
 #modify the counts data 
 rownames(counts_df)=counts_df[,1]
 counts_df=counts_df[,-1]
@@ -24,6 +24,7 @@ colnames(transposed_counts_df)
 rownames(transposed_counts_df)
 
 library("WGCNA")
+enableWGCNAThreads()
 sampleTree = hclust(dist(transposed_counts_df), method = "average")
 # Plot the sample tree: Open a graphic ouwindow of size 12 by 9 inches# The user should change the dimensions if the window is too large or too small.sizeGrWindow(12,9)#pdf(file = "Plots/sampleClustering.pdf", width = 12, height = 9);
 par(cex = 0.6);par(mar = c(0,4,2,0))
