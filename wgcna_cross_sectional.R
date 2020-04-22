@@ -1,6 +1,6 @@
 #scr 0 vs 2
 library(stringr)
-counts_df=read.csv(file="/home/cidr/Documents/work/fresh/automatedCounts/cross_sectional_igra_negative/counts_igra_negative_scr_0hr_vs_igra_negative_b3_0hr.csv",header = TRUE,stringsAsFactors = FALSE)
+counts_df=read.csv(file="./counts_igra_negative_scr_0hr_vs_igra_negative_b3_0hr.csv",header = TRUE,stringsAsFactors = FALSE)
 
 
 #modify the counts data 
@@ -104,7 +104,7 @@ nSamples = nrow(transposed_counts_df)
 # Recalculate MEs with color labels
 MEs0 = moduleEigengenes(transposed_counts_df, moduleColors)$eigengenes
 MEs = orderMEs(MEs0)
-datTraits = read.csv("./traits_data.csv", stringsAsFactors = FALSE)
+datTraits = read.csv("./traits_data_cross_sectional.csv", stringsAsFactors = FALSE)
 rownames(datTraits) = datTraits[,1]
 datTraits$sample_id = NULL
 moduleTraitCor = cor(MEs, datTraits, use = "p")
@@ -115,18 +115,50 @@ sizeGrWindow(10,6)
 textMatrix = paste(signif(moduleTraitCor, 2), "\n(",signif(moduleTraitPvalue, 1), ")", sep = "")
 dim(textMatrix) = dim(moduleTraitCor)
 
-par(mar = c(6, 8.5, 3, 3))
-# Display the correlation values within a heatmap plot
-labeledHeatmap(Matrix = moduleTraitCor,xLabels = names(datTraits),yLabels = names(MEs),ySymbols = names(MEs),textMatrix = textMatrix,setStdMargins = FALSE,cex.text = 0.5,zlim = c(-1,1),main = paste("Module-trait relationships"), colorMatrix = )
-
-res = labeledHeatmap(Matrix = moduleTraitCor,xLabels = names(datTraits),yLabels = names(MEs),ySymbols = names(MEs),colorLabels = FALSE,colors = greenWhiteRed(50),textMatrix = textMatrix,setStdMargins = FALSE,cex.text = 0.5,zlim = c(-1,1),main = paste("Module-trait relationships"))
 
 
 
-naColor = NULL
-if (length(naColor)==0) naColor = 0;
-signed = FALSE
-colors = greenWhiteRed(50)
-zlim = c(-1,1)
-if (signed) zlim = c(-max(abs(zlim)), max(abs(zlim)));
-colorMatrix = numbers2colors(moduleTraitCor, signed, colors = greenWhiteRed(50), lim = zlim, naColor = naColor)
+#finding out module membership
+sample_type = as.data.frame(datTraits %>% dplyr::select(type))
+
+#name colours of the modules 
+modNames = substring(names(MEs),3)
+#calculating gene module membership 
+geneModuleMembership = as.data.frame(cor(transposed_counts_df,MEs, use = "p"))
+MMPvalue = as.data.frame(corPvalueStudent(as.matrix(geneModuleMembership),nSamples))
+names(geneModuleMembership) = paste("MM",modNames, sep = "")
+names(MMPvalue) = paste("p.MM", modNames, sep = "")
+
+geneTraitSignificance = as.data.frame(cor(transposed_counts_df,sample_type, use = "p"))
+GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSamples))
+
+names(geneTraitSignificance) = paste("GS.", names(sample_type), sep="");
+names(GSPvalue) = paste("p.GS.", names(sample_type), sep="");
+
+for(module in unique(moduleColors))
+{
+  column = match(module, modNames);
+  moduleGenes = moduleColors==module;
+#sizeGrWindow(7, 7);
+#par(mfrow = c(1,1));
+  jpeg(paste("./module_",module,".jpeg", sep = ""))
+  verboseScatterplot(abs(geneModuleMembership[moduleGenes, column]),abs(geneTraitSignificance[moduleGenes, 1]),xlab = paste("Module Membership in", module, "module"),ylab = "Gene significance for sample type (SCR/B3)",main = paste("Module membership vs. gene significance\n"),cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
+  dev.off()
+}
+
+
+# par(mar = c(6, 8.5, 3, 3))
+# # Display the correlation values within a heatmap plot
+# labeledHeatmap(Matrix = moduleTraitCor,xLabels = names(datTraits),yLabels = names(MEs),ySymbols = names(MEs),textMatrix = textMatrix,setStdMargins = FALSE,cex.text = 0.5,zlim = c(-1,1),main = paste("Module-trait relationships"), colorMatrix = )
+# 
+# res = labeledHeatmap(Matrix = moduleTraitCor,xLabels = names(datTraits),yLabels = names(MEs),ySymbols = names(MEs),colorLabels = FALSE,colors = greenWhiteRed(50),textMatrix = textMatrix,setStdMargins = FALSE,cex.text = 0.5,zlim = c(-1,1),main = paste("Module-trait relationships"))
+# 
+# 
+# 
+# naColor = NULL
+# if (length(naColor)==0) naColor = 0;
+# signed = FALSE
+# colors = greenWhiteRed(50)
+# zlim = c(-1,1)
+# if (signed) zlim = c(-max(abs(zlim)), max(abs(zlim)));
+# colorMatrix = numbers2colors(moduleTraitCor, signed, colors = greenWhiteRed(50), lim = zlim, naColor = naColor)
