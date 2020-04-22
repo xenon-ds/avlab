@@ -141,7 +141,7 @@ for(module in unique(moduleColors))
   moduleGenes = moduleColors==module;
 #sizeGrWindow(7, 7);
 #par(mfrow = c(1,1));
-  jpeg(paste("./module_",module,".jpeg", sep = ""))
+  jpeg(paste("./generated_figures/module_",module,".jpeg", sep = ""))
   verboseScatterplot(abs(geneModuleMembership[moduleGenes, column]),abs(geneTraitSignificance[moduleGenes, 1]),xlab = paste("Module Membership in", module, "module"),ylab = "Gene significance for sample type (SCR/B3)",main = paste("Module membership vs. gene significance\n"),cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
   dev.off()
 }
