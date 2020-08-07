@@ -133,15 +133,58 @@
   #filter is the type of id (hgnc_symbol, ensembl_gene_id) you are supplying
   #
   ##########################################################################
-  getAnnotationFromBiomart=function(ids, filter, columns)
+  getAnnotationFromBiomart=function(ids, filter, columns, mirror = c("useast", "uswest", "asia", "www"))
   {
     library(biomaRt)
-    mart = useEnsembl(biomart = "ensembl",dataset = "hsapiens_gene_ensembl",mirror = "useast")
+    mirror = match.arg(mirror)
+    mart = useEnsembl(biomart = "ensembl",dataset = "hsapiens_gene_ensembl",mirror = mirror)
     
     ensembl = useDataset(dataset="hsapiens_gene_ensembl",mart=mart)
     #biomartResults=getBM(attributes = columns, filters ="ensembl_gene_id",values = id,mart = mart)
     biomartResults=getBM(attributes = columns, filters =filter,values = ids,mart = mart)
     return(biomartResults)
+  }
+  
+  ##########################################################################
+  #get gene ontology annotation for a gene
+  #a very critical function for connecting to Biomart and fetching annotation info.
+  #filter is the type of id (hgnc_symbol, ensembl_gene_id) you are supplying
+  #
+  ##########################################################################
+  getGeneOntologyAnnotationFromBiomart=function(ids)
+  {
+    library(biomaRt)
+    #mirror = match.arg(mirror)
+    filter = "hgnc_symbol"
+    columns = c("hgnc_symbol","go_id")
+    #mirror = c("useast", "uswest", "asia", "www")
+    mirror = "useast"
+    mart = useEnsembl(biomart = "ensembl",dataset = "hsapiens_gene_ensembl",mirror = mirror)
+    
+    ensembl = useDataset(dataset="hsapiens_gene_ensembl",mart=mart)
+    #biomartResults=getBM(attributes = columns, filters ="ensembl_gene_id",values = id,mart = mart)
+    biomartResults=getBM(attributes = columns, filters =filter,values = ids,mart = ensembl)
+    print(head(biomartResults))
+    library(GO.db)
+    go_ids = biomartResults$go_id
+    #go_annotation = Term(GOTERM)[go_ids[Ontology(go_ids)=="BP"]]
+    go_annotation = Term(GOTERM)[go_ids]
+    biomartResults$go_annotation = go_annotation
+    biomartResults = biomartResults %>% dplyr::filter(!is.na(go_annotation))
+    getAnnotationString = function(id)
+    {
+      annot = biomartResults %>% dplyr::filter(hgnc_symbol == id) %>% dplyr::select(go_annotation) %>% pull() %>% paste(collapse = ",")
+      return(annot)
+    }
+    go_annotation = sapply(ids,getAnnotationString)
+    names(go_annotation) = ids
+    print(go_annotation)
+    #library(GO.db)
+    #go_ids = biomartResults$go_id
+    #go_annotation = Term(GOTERM)[go_ids[Ontology(go_ids)=="BP"]]
+    #print(head(go_annotation))
+    #print(head(go_annotation))
+    return(go_annotation)
   }
   
   ##########################################################################
@@ -238,7 +281,7 @@
   filterCodingGenesDf=function(df,mode="")
   {
     library(biomaRt)
-    filterBiotypes=c("IG_C_gene","IG_D_gene","IG_J_gene","IG_LV_gene","IG_V_gene","TR_C_gene","TR_J_gene","TR_V_gene","TR_D_gene ","protein_coding")
+    filterBiotypes = c("IG_C_gene","IG_D_gene","IG_J_gene","IG_LV_gene","IG_V_gene","TR_C_gene","TR_J_gene","TR_V_gene","TR_D_gene ","protein_coding")
     if(mode=="d")
     {
       genes=as.character(df$gene_symbol)
@@ -297,6 +340,7 @@
     {
       print("no genes supplied. cant figure out why you called me. such a waste of time. bye")
     }
+    print(selectedGenes)
     return(selectedGenes)
   }
   
@@ -512,7 +556,7 @@
   }
   
   ########################
-  #get kegg pathways 
+  #get kegg pathwaysfrom entrez ids 
   ########################
   getKeggPathways=function(geneList, pathwaysType = c("gsea","enricher"))
   {
@@ -561,6 +605,35 @@
     {
       res = data.frame()
     }
+    return(res)
+  }
+  
+  ###############################
+  #get the reactome pathways just from gene symbols
+  ###############################
+  getReactomePathways = function(gene_symbols)
+  {
+    library(org.Hs.eg.db)
+    library(dplyr)
+    library(ReactomePA)
+    entrez_ids = unlist(mapIds(org.Hs.eg.db, gene_symbols, "ENTREZID", "SYMBOL"))
+    reactome_df = enrichPathway(gene = entrez_ids)
+    reactome_df = as.data.frame(setReadable(reactome_df, org.Hs.eg.db, keyType = "ENTREZID")) %>% dplyr::select(ID, Description, Count, geneID, "p.adjust")
+    return(reactome_df)
+  }
+  
+  #get kegg pathways from gene symbols 
+  
+  get_kegg_pathways_from_gene_symbols = function(gene_symbols)
+  {
+    library(org.Hs.eg.db)
+    library(clusterProfiler)
+    entrez_ids = unlist(mapIds(org.Hs.eg.db, gene_symbols, "ENTREZID", "SYMBOL"))
+    res= enrichKEGG(gene =  entrez_ids,organism     = 'hsa',pvalueCutoff = 0.05)
+    #print(typeof(res))
+    res=setReadable(res, org.Hs.eg.db, keyType = "ENTREZID")
+    res = as.data.frame(res)
+    res = res %>% dplyr::select(ID, Description, Count, geneID, "p.adjust")
     return(res)
   }
   
@@ -1065,53 +1138,54 @@
     return(as.data.frame(deGenesOrdered))
   }
   
-    get_differential_expression_results_df=function(counts_df)
-    {
-      library(stringr)
-      library(DESeq2)
-      
-      
-      
-      print(paste("nrow(counts_df[rowSums(counts_df)<10,])",nrow(counts_df[rowSums(counts_df)<10,])))
-      print(paste("nrow(counts_df[rowSums(counts_df)<6,])",nrow(counts_df[rowSums(counts_df)<6,])))
-      print(paste("nrow(counts_df[rowSums(counts_df)<3,])",nrow(counts_df[rowSums(counts_df)<2,])))
-      
-      
-      counts_df=counts_df[rowSums(counts_df)>2,]
-      
-      columns=colnames(counts_df)
-      
-      #preparing the details dataframe
-      sam_file_details=as.data.frame(cbind(columns[1:(ncol(counts_df)/2)],columns[((ncol(counts_df)/2)+1): ncol(counts_df)]))
-      colnames(sam_file_details)=c("control","treatment")
-      
-      
-      #***********************************************************
-      #conducting differential expression analysis
-      #***********************************************************
-      colData = DataFrame(condition=factor(c("ctrl","ctrl", "ctrl","treat", "treat", "treat")))
-      dds = DESeqDataSetFromMatrix(counts_df, colData, formula(~ condition))
-      
-      # run DEseq
-      res= DESeq(dds)
-      
-      #plotMA(res)
-      
-      #diffrentiallyExpressed 
-      deGenes = results(res,alpha=0.05)
-      
-      # order by BH adjusted p-value
-      deGenesOrdered = deGenes[order(deGenes$padj),]
-      deGenesOrdered=filterByPadjValue(df=deGenesOrdered,cutoff = 0.05)
-      
-      return(as.data.frame(deGenesOrdered))
-    }
-  
+    # get_differential_expression_results_df=function(counts_df)
+    # {
+    #   library(stringr)
+    #   library(DESeq2)
+    #   
+    #   
+    #   
+    #   print(paste("nrow(counts_df[rowSums(counts_df)<10,])",nrow(counts_df[rowSums(counts_df)<10,])))
+    #   print(paste("nrow(counts_df[rowSums(counts_df)<6,])",nrow(counts_df[rowSums(counts_df)<6,])))
+    #   print(paste("nrow(counts_df[rowSums(counts_df)<3,])",nrow(counts_df[rowSums(counts_df)<2,])))
+    #   
+    #   
+    #   counts_df=counts_df[rowSums(counts_df)>2,]
+    #   
+    #   columns=colnames(counts_df)
+    #   
+    #   #preparing the details dataframe
+    #   sam_file_details=as.data.frame(cbind(columns[1:(ncol(counts_df)/2)],columns[((ncol(counts_df)/2)+1): ncol(counts_df)]))
+    #   colnames(sam_file_details)=c("control","treatment")
+    #   
+    #   
+    #   #***********************************************************
+    #   #conducting differential expression analysis
+    #   #***********************************************************
+    #   colData = DataFrame(condition=factor(c("ctrl","ctrl", "ctrl","treat", "treat", "treat")), replicate = c("1", "2", "3", "1", "2" ,"3"))
+    #   
+    #   dds = DESeqDataSetFromMatrix(counts_df, colData, formula(~ condition))
+    #   
+    #   # run DEseq
+    #   res= DESeq(dds)
+    #   
+    #   #plotMA(res)
+    #   
+    #   #diffrentiallyExpressed 
+    #   deGenes = results(res,alpha=0.05)
+    #   
+    #   # order by BH adjusted p-value
+    #   deGenesOrdered = deGenes[order(deGenes$padj),]
+    #   #deGenesOrdered=filterByPadjValue(df=deGenesOrdered,cutoff = 0.05)
+    #   
+    #   return(as.data.frame(deGenesOrdered))
+    # }
+    # 
   ################################################################################
   # get_annotated_deg_df 
   # returns an annotated differential expression results dataframe
   ################################################################################
-  get_annotated_deg_df=function(deg_file_path,degs_df=NA)
+  get_annotated_deg_df = function(deg_file_path,degs_df=NA, filter_by_padj = TRUE)
   {
     library(dplyr)
     library(stringr)
@@ -1130,7 +1204,9 @@
         degs_df=read_excel(path =deg_file_path,sheet = 1)
       }
     }
-    #degs_df=filterByPadjValue(degs_df,cutoff = 0.05)
+    if(filter_by_padj){
+      degs_df=filterByPadjValue(degs_df,cutoff = 0.05)
+    }
     print(head(degs_df))
     # columns=colnames(degs_df)
     # columns[1]="ensembl_gene_id"
@@ -1183,6 +1259,7 @@
     
     return(degs_df)
   }
+  
   
   generate_counts_data_excel=function(human_readable_counts_df,output_filepath)
   {
@@ -1393,11 +1470,24 @@
   # get_quick_summary
   # the get_quick_summary function takes in two degs files and return valuable summary from the two files which can be directly used ( and is used) in presentations
   #############################################
-  get_quick_summary = function(degs1_filepath, degs2_filepath, set1_name,set2_name)
+  get_quick_summary = function(degs1_filepath, degs2_filepath, set1_name,set2_name, filter_by_padj = TRUE)
   {
-    
-    set1_df = read.csv(file = degs1_filepath, stringsAsFactors = FALSE)
+    library(dplyr)
+    set1_df = read.csv(file = degs1_filepath, stringsAsFactors = FALSE) 
     set2_df = read.csv(file = degs2_filepath, stringsAsFactors = FALSE)
+    set1_df = set1_df%>% dplyr::filter(!is.na(padj))
+    set2_df = set2_df%>% dplyr::filter(!is.na(padj))
+    
+    set1_df = set1_df %>% dplyr::filter(!is.na(padj), gene_symbol!="")
+    set2_df = set2_df %>% dplyr::filter(!is.na(padj), gene_symbol!="")
+    set1_df = set1_df %>% group_by(gene_symbol) %>% dplyr::filter(row_number()==1) %>% ungroup()
+    set2_df = set2_df %>% group_by(gene_symbol) %>% dplyr::filter(row_number()==1) %>% ungroup()
+    
+    if(filter_by_padj)
+    {
+      set1_df = set1_df%>% dplyr::filter(padj<0.05)
+      set2_df = set2_df%>% dplyr::filter(padj<0.05)
+    }
     
     set1_total_genes = nrow(set1_df)
     set2_total_genes = nrow(set2_df)
@@ -1673,21 +1763,26 @@
     #loading the required packages for making an excel report and generating venn diagrams
     library(VennDiagram)
     library(xlsx)
-    
+    library(dplyr)
     pathwaysType = match.arg(pathwaysType)
     #reading the differential expression files into dataframes
     #the expression files should be in the standard format 
     degs1_df = read.csv(file = degs1_filepath, stringsAsFactors = FALSE)
     degs2_df = read.csv(file = degs2_filepath, stringsAsFactors = FALSE)
-    
+    degs1_df = degs1_df %>% dplyr::filter(!is.na(padj), gene_symbol!="")
+    degs2_df = degs2_df %>% dplyr::filter(!is.na(padj), gene_symbol!="")
+    degs1_df = degs1_df %>% group_by(gene_symbol) %>% dplyr::filter(row_number()==1) %>% ungroup()
+    degs2_df = degs2_df %>% group_by(gene_symbol) %>% dplyr::filter(row_number()==1) %>% ungroup()
+    degs1_df = as.data.frame(degs1_df)
+    degs2_df = as.data.frame(degs2_df)
     #reordering the differential expression data based on the log2FoldChange , ready for analysis
     degs1_df=degs1_df[order(as.numeric(degs1_df$log2FoldChange),decreasing = TRUE),]
     degs2_df=degs2_df[order(as.numeric(degs2_df$log2FoldChange),decreasing = TRUE),]
     
     #filtering based padj value cutoff 
     padj_cutoff = 0.05
-    degs1_df = degs1_df[degs1_df$padj <= padj_cutoff,]
-    degs2_df = degs2_df[degs2_df$padj <= padj_cutoff,]
+    degs1_df = degs1_df[degs1_df$padj < padj_cutoff,]
+    degs2_df = degs2_df[degs2_df$padj < padj_cutoff,]
     
     #getting a quick summary of the degs
     #this quick summary will be used in the reoprt
@@ -2058,10 +2153,13 @@
     library(xlsx)
     my_degs_df=read.csv(file=degs_csv_path,stringsAsFactors = F,header = T)
     my_degs_df=my_degs_df %>% group_by(gene_symbol) %>% dplyr::filter(row_number()==1) %>% ungroup()
+    my_degs_df = my_degs_df %>% dplyr::arrange(desc(log2FoldChange)) %>% dplyr::filter(padj < 0.05)
+    my_degs_df = my_degs_df %>% dplyr::filter(!is.na(padj), gene_symbol!="")
+    my_degs_df = my_degs_df %>% group_by(gene_symbol) %>% dplyr::filter(row_number()==1) %>% ungroup()
     
     #print(head(my_degs_df))
-    up_degs_df=my_degs_df %>% dplyr::filter(log2FoldChange > 0)
-    down_degs_df=my_degs_df %>% dplyr::filter(log2FoldChange < 0)
+    up_degs_df=my_degs_df %>% dplyr::filter(log2FoldChange >= 1)
+    down_degs_df=my_degs_df %>% dplyr::filter(log2FoldChange <= -1)
     #getting the details dataframe
     up_down_details_df=get_up_down_details_df(my_degs_df)
     
@@ -2106,8 +2204,8 @@
   get_up_down_details_df=function(degs_df)
   {
     all=nrow(degs_df)
-    upregulated=nrow(degs_df[degs_df$log2FoldChange > 0,])
-    downregulated=nrow(degs_df[degs_df$log2FoldChange < 0,])
+    upregulated=nrow(degs_df[degs_df$log2FoldChange >= 1,])
+    downregulated=nrow(degs_df[degs_df$log2FoldChange <= -1,])
     up_down_details_df=data.frame()
     up_down_details_df=addRowToDetailsDf(df = up_down_details_df,detail = "total differentially expressed genes",value =all )
     up_down_details_df=addRowToDetailsDf(df = up_down_details_df,detail = "total upregulated genes",value =upregulated )
@@ -2303,7 +2401,7 @@
     #***********************************************************
     #conducting differential expression analysis
     #***********************************************************
-    colData = DataFrame(condition=factor(c("ctrl","ctrl", "ctrl","treat", "treat", "treat")))
+    colData = DataFrame(condition=factor(c(rep("control", ncol(counts_df)/2),rep("treatment", ncol(counts_df)/2))))
     dds = DESeqDataSetFromMatrix(counts_df, colData, formula(~ condition))
     
     # run DEseq
@@ -2714,17 +2812,34 @@
   
   median_based_count_matrix_filtering = function(counts_matrix, expected_median = 10)
   {
+    library(dplyr)
+    library(ggplot2)
+    
+    control_indices = 1:(ncol(counts_matrix)/2)
+    treatment_indices = ((ncol(counts_matrix)/2)+1):ncol(counts_matrix)
+    median_control = apply(counts_matrix, 1, function(x){return(median(x[control_indices]))})
+    median_treatment = apply(counts_matrix, 1, function(x){return(median(x[treatment_indices]))})
+    temp_counts_df = cbind.data.frame(counts_matrix, median_control, median_treatment)
+    print(temp_counts_df %>% ggplot(aes(x = log10(median_control+1), y = log10(median_treatment+1))) + geom_point(alpha = 0.3)+geom_vline(xintercept = 1, color = "red")+geom_hline(yintercept = 1, color = "blue") + ggtitle("Before removing low counts"))
+    
     selected_rows = apply(counts_matrix,1,rowwise_median_filter,expected_median)
     print(nrow(counts_matrix))
     not_selected_count_matrix = counts_matrix[!selected_rows,]
     counts_matrix = counts_matrix[selected_rows,]
+    print("not_selected_rows below")
     print(nrow(counts_matrix))
     print(head(not_selected_count_matrix))
+    print(ncol(counts_matrix))
+    median_control = apply(counts_matrix, 1, function(x){return(median(x[control_indices]))})
+    median_treatment = apply(counts_matrix, 1, function(x){return(median(x[treatment_indices]))})
+    temp_counts_df = cbind.data.frame(counts_matrix, median_control, median_treatment)
+    print(temp_counts_df %>% ggplot(aes(x = log10(median_control+1), y = log10(median_treatment+1))) + geom_point(alpha = 0.3)+geom_vline(xintercept = 1, color = "red")+geom_hline(yintercept = 1, color = "blue") + ggtitle("After removing low counts"))
     return(counts_matrix)
   }
   
 rowwise_median_filter = function(counts, expected_median = 10)
 {
-  return(median(counts[1:3])>=expected_median | median(4:6)>=expected_median)
+  control_indices = 1:(length(counts)/2)
+  treatment_indices = ((length(counts)/2)+1):length(counts)
+  return(median(counts[control_indices])>=expected_median | median(counts[treatment_indices])>=expected_median)
 }
-  
